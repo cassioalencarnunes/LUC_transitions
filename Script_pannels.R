@@ -32,6 +32,9 @@ row.names(mean_final)[5]<-"SFo"
 
 mean_final <- mean_final[order(match(row.names(mean_final),c("UF","LF","LBF","PA","MA","SFy","SFo"))),]
 
+mean_table <- t(mean_final)
+write.csv(file = "Results/mean_values_table.csv", x = mean_table)
+
 # Order of the arrows:
 # UF_LF, UF_PA, UF_MA, LF_LBF, LF_PA, LF_MA, LBF_PA, LFB_MA, PA_MA, MA_PA, MA_SFy, PA_SFy, SFy_PA, SFy_MA, SFy_SFo, SFo_PA, SFo_MA 
 
