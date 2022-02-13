@@ -1,19 +1,14 @@
 #### Script to run  the analyses of land use and land cover transition effects on ecosystem variables ####
-## The script runs GLMMs for each variable and each transition ##
 ## Only for biodiversity variables considering only the richness of forest species! ##
 
 # Loading packages
 
 library(dplyr)
 library(tidyr)
-library(ggplot2)
 library(vegan)
 library(lme4)
-library(performance)
-library(EnvStats)
-library(MuMIn)
+library(DHARMa)
 
-source(file = "Over_function.txt")
 
 # Loading data
 
@@ -42,6 +37,11 @@ t_STM <- t_STM %>%
 t_PGM <- t_PGM %>% 
   select(Transect_code, LU_UF)
 
+# Loading environmental data
+environment <- read.csv("Data/environment.csv", h=T)
+environment_PGM <- environment[environment$Region=="PGM",]
+environment_STM <- environment[environment$Region=="STM",]
+
 
 # Keeping only the valid transects
 
@@ -58,6 +58,10 @@ sap_STM<-droplevels(sap_STM[sap_STM$Transect_code %in% t_STM$Transect_code,])
 sap_PGM<-droplevels(sap_PGM[sap_PGM$Transect_code %in% t_PGM$Transect_code,])
 trees_STM<-droplevels(trees_STM[trees_STM$Transect_code %in% t_STM$Transect_code,])
 trees_PGM<-droplevels(trees_PGM[trees_PGM$Transect_code %in% t_PGM$Transect_code,])
+
+# Environment
+environment_STM<-droplevels(environment_STM[environment_STM$Transect_code %in% t_STM$Transect_code,])
+environment_PGM<-droplevels(environment_PGM[environment_PGM$Transect_code %in% t_PGM$Transect_code,])
 
 
 #### Only forest species ####
@@ -275,7 +279,8 @@ data_joined_PGM <- ants_PGM_forest %>% select(Region, Catchment, Transect, Trans
   left_join(sap_PGM_forest %>% select(Transect_code, rich), by = "Transect_code") %>% 
   rename(sap_rich = rich) %>%
   left_join(trees_PGM_forest %>% select(Transect_code, rich), by = "Transect_code") %>% 
-  rename(tree_rich = rich)
+  rename(tree_rich = rich) %>% 
+  left_join(environment_PGM %>% select(-c(1:3,5)), by = "Transect_code")
 
 # STM region
 names(ants_STM_forest)
@@ -290,253 +295,131 @@ data_joined_STM <- ants_STM_forest %>% select(Region, Catchment, Transect, Trans
   left_join(sap_STM_forest %>% select(Transect_code, rich), by = "Transect_code") %>% 
   rename(sap_rich = rich) %>%
   left_join(trees_STM_forest %>% select(Transect_code, rich), by = "Transect_code") %>% 
-  rename(tree_rich = rich)
+  rename(tree_rich = rich) %>% 
+  left_join(environment_STM %>% select(-c(1:3,5)), by = "Transect_code")
 
 data_joined_PGM$Catchment <- as.numeric(data_joined_PGM$Catchment)
+
 data_all_joined <- bind_rows(data_joined_STM, data_joined_PGM)
+
+data_all_joined <- data_all_joined[data_all_joined$LU_UF %in% c("UF", "LF", "LBF", 
+                                                                "MA", "PA", "SFyoung",
+                                                                "SFold"),]
+
+
+data_all_joined_scaled <- data_all_joined
+
+data_all_joined_scaled[,6:ncol(data_all_joined_scaled)] <- scale(data_all_joined[,6:ncol(data_all_joined_scaled)], center = T, scale = T)
+
+summary(data_all_joined_scaled)
+
 
 write.csv(data_all_joined, "Data/data_rich_forest_sp.csv")
 
 
-#### Creating the tables for each transition ####
+# Creating an object with all transitions, i.e. contrasts to be run
 
-transitions <- cbind(c("UF","UF","UF", "UF","LF","LF","LF","LBF","LBF","PA","PA","MA","SFyoung","SFold","SFold"),
-                     c("LF", "LBF","PA","MA","LBF","PA","MA","PA","MA","MA","SFyoung","SFyoung","SFold","PA","MA"))
+transitions <- c("UF - LF = 0",
+                 "UF - LBF = 0",
+                 "UF - PA = 0",
+                 "UF - MA = 0",
+                 "LF - LBF = 0",
+                 "LF - PA = 0",
+                 "LF - MA = 0",
+                 "LBF - PA = 0",
+                 "LBF - MA = 0",
+                 "PA - MA = 0",
+                 "PA - SFyoung = 0",
+                 "MA - SFyoung = 0",
+                 "SFold - PA = 0",
+                 "SFold - MA = 0",
+                 "SFyoung - SFold = 0")
 
-row.names(transitions) <- paste(transitions[,1], "_", transitions[,2], sep = "")
 
-data_all_joined$LU_UF <- as.factor(data_all_joined$LU_UF)
-list_transitions <- list()
+#### LMMs - Species richness ####
 
-for (i in 1:15){
-  
-  list_transitions[[i]] <- data_all_joined %>%
-    filter(LU_UF == transitions[i,1] | LU_UF == transitions[i,2]) %>%
-    mutate(LU_UF = droplevels(LU_UF)) %>% 
-    mutate(LU_UF = factor(LU_UF, levels = transitions[i,]))
-  
-}
+# Each model has four explanatory variable, being Land use the variable of interest and
+# Clay, elevation and slope co-variables. It also has catchment and region as random factors
 
-names(list_transitions) <- row.names(transitions)
-
-#### GLMMs - species richness ####
 
 biodiversity_variables <- c("ant_rich", "bird_rich", "db_rich", "liana_rich", "sap_rich", "tree_rich")
 
-coef_LU_final_bio <- NULL
-coef_ranef_final_bio <- NULL
-anova_test_final_bio <- NULL
+efsize_final_bio <- NULL
+model_data_final_bio <- NULL
 
-list_results_LU_bio <- list()
-list_results_final_bio <- list()
-
-
-for (i in names(list_transitions)){
+for (i in biodiversity_variables){
   
-  data_for_GLMM_bio <- list_transitions[[i]]
+  m1_bio <- lmer(data_all_joined_scaled[,i] ~ LU_UF + CLAY_ALL + ELEV_MEAN + SLOPE_MEAN + (1|Catchment) + (1|Region),
+                 data = data_all_joined_scaled)
   
-  for (j in biodiversity_variables){
-    
-    m1_bio <- glmer(data_for_GLMM_bio[,j] ~ LU_UF + (1|Region), family = "poisson", control = glmerControl(optimizer="bobyqa", tolPwrss=1e-3, optCtrl = list(maxfun = 100000)),
-                    data = data_for_GLMM_bio)
-    over_test <- check_overdispersion(m1_bio)
-    
-    if (over_test$p_value >= 0.05){
-      
-      m0_bio <- glmer(data_for_GLMM_bio[,j] ~ (1|Region), family = "poisson", control = glmerControl(optimizer="bobyqa", tolPwrss=1e-3, optCtrl = list(maxfun = 100000)),
-                      data = data_for_GLMM_bio)
-      
-      anova_test_bio <- anova(m0_bio, m1_bio)
-      
-      coef_LU_bio <- as.data.frame(t(m1_bio@beta))
-      colnames(coef_LU_bio) <- levels(data_for_GLMM_bio$LU_UF)
-      coef_LU_bio$variable <- j
-      coef_LU_bio$family <- "Poisson"
-      coef_LU_bio$p_value <- anova_test_bio$`Pr(>Chisq)`[2]
-      coef_LU_bio$R2m <- r.squaredGLMM(m1_bio)[3,1]
-      coef_LU_bio$R2c <- r.squaredGLMM(m1_bio)[3,2]
-      coef_LU_bio$AIC <- anova_test_bio$AIC[2]
-      coef_ranef_bio <- as.data.frame(t(ranef(m1_bio)$Region))
-      coef_ranef_bio$variable <- j
-      
-      
-      anova_test_final_bio <- rbind(anova_test_final_bio,anova_test_bio)
-      coef_LU_final_bio <- rbind(coef_LU_final_bio, coef_LU_bio)
-      coef_ranef_final_bio <- rbind(coef_ranef_final_bio, coef_ranef_bio)
-      
-    }
-    
-    else {
-      
-      print(j)
-      m2_bio <- glmer.nb(data_for_GLMM_bio[,j] ~ LU_UF + (1|Region), control = glmerControl(optimizer="bobyqa", tolPwrss=1e-3, optCtrl = list(maxfun = 100000)),
-                         data = data_for_GLMM_bio)
-      m0.2_bio <- glmer.nb(data_for_GLMM_bio[,j] ~ (1|Region), control = glmerControl(optimizer="bobyqa", tolPwrss=1e-3, optCtrl = list(maxfun = 100000)),
-                           data = data_for_GLMM_bio)
-      
-      anova_test_bio <- anova(m0.2_bio, m2_bio)
-      
-      coef_LU_bio <- as.data.frame(t(m2_bio@beta))
-      colnames(coef_LU_bio) <- levels(data_for_GLMM_bio$LU_UF)
-      coef_LU_bio$variable <- j 
-      coef_LU_bio$family <- "Negative Binomial"
-      coef_LU_bio$p_value <- anova_test_bio$`Pr(>Chisq)`[2]
-      coef_LU_bio$R2m <- r.squaredGLMM(m2_bio)[3,1]
-      coef_LU_bio$R2c <- r.squaredGLMM(m2_bio)[3,2]
-      coef_LU_bio$AIC <- anova_test_bio$AIC[2]
-      coef_ranef_bio <- as.data.frame(t(ranef(m2_bio)$Region))
-      coef_ranef_bio$variable <- j
-      
-      anova_test_final_bio <- rbind(anova_test_final_bio,anova_test_bio)
-      coef_LU_final_bio <- rbind(coef_LU_final_bio, coef_LU_bio)
-      coef_ranef_final_bio <- rbind(coef_ranef_final_bio, coef_ranef_bio)
-    }
-    
-  }
+  model_checking_bio <- simulateResiduals(m1_bio)
+  disp_param_bio <- testDispersion(model_checking_bio)
+  hetero_param_bio <- testCategorical(model_checking_bio, catPred = data_all_joined_scaled[!is.na(data_all_joined_scaled[i]), "LU_UF"])
   
-  list_results_LU_bio[[1]] <- anova_test_final_bio
-  list_results_LU_bio[[2]] <- coef_LU_final_bio
-  list_results_LU_bio[[3]] <- coef_ranef_final_bio
+  anova_test_bio <- car::Anova(m1_bio)
   
-  list_results_final_bio[[i]] <- list_results_LU_bio
+  contrast_LU_bio <- multcomp::glht(m1_bio, linfct = multcomp::mcp(LU_UF = transitions))
+  contrast_LU_test_bio <- summary(contrast_LU_bio)
+  contrast_LU_ci_bio <- confint(contrast_LU_bio, level = 0.95)
   
-  coef_LU_final_bio <- NULL
-  coef_ranef_final_bio <- NULL
-  anova_test_final_bio <- NULL
+  efsize_bio <- as.data.frame(contrast_LU_ci_bio$confint)
+  efsize_bio$p_value <- contrast_LU_test_bio$test$pvalues
+  efsize_bio$std_error <- contrast_LU_test_bio$test$sigma
+  efsize_bio$variable <- i
   
-  list_results_LU_bio <- NULL
+  model_data_bio <- as.data.frame(anova_test_bio)
+  model_data_bio$disp_param <- disp_param_bio$p.value
+  model_data_bio$hetero_param <- hetero_param_bio$homogeneity$`Pr(>F)`[1]
+  model_data_bio$variable <- i
+  
+  efsize_final_bio <- rbind(efsize_final_bio, efsize_bio)
+  model_data_final_bio <- rbind(model_data_final_bio, model_data_bio)
+  
+  efsize_bio <- NULL
+  model_data_bio <- NULL
   
 }
 
 
+#### LMM - Orchid Bee species richness ####
 
-for (i in names(list_results_final_bio)){
-  
-  data_frame_to_save <- list_results_final_bio[[i]][[2]]
-  name_file <- paste("bio", "_", i, "_", "forest", ".csv", sep="")
-  write.csv(x = data_frame_to_save, file = paste("Results/", name_file, sep = ""))
-  
-}
+bee_PGM_data <- data_all_joined_scaled[data_all_joined_scaled$Region=="PGM",]
 
 
-#### GLMMs - Orchid Bee species richness ####
+m1_bee <- lmer(bee_rich ~ LU_UF + CLAY_ALL + ELEV_MEAN + SLOPE_MEAN + (1|Catchment),
+               data = data_all_joined_scaled)
+
+model_checking_bee <- simulateResiduals(m1_bee)
+disp_param_bee <- testDispersion(model_checking_bee)
+hetero_param_bee <- testCategorical(model_checking_bee, catPred = data_all_joined_scaled[!is.na(data_all_joined_scaled$bee_rich), "LU_UF"])
+
+anova_test_bee <- car::Anova(m1_bee)
+
+contrast_LU_bee <- multcomp::glht(m1_bee, linfct = multcomp::mcp(LU_UF = transitions))
+contrast_LU_test_bee <- summary(contrast_LU_bee)
+contrast_LU_ci_bee <- confint(contrast_LU_bee, level = 0.95)
+
+efsize_bee <- as.data.frame(contrast_LU_ci_bee$confint)
+efsize_bee$p_value <- contrast_LU_test_bee$test$pvalues
+efsize_bee$std_error <- contrast_LU_test_bee$test$sigma
+efsize_bee$variable <- "bee_rich"
+
+model_data_bee <- as.data.frame(anova_test_bee)
+model_data_bee$disp_param <- disp_param_bee$p.value
+model_data_bee$hetero_param <- hetero_param_bee$homogeneity$`Pr(>F)`[1]
+model_data_bee$variable <- "bee_rich"
+
+efsize_final_bio <- rbind(efsize_final_bio, efsize_bee)
+model_data_final_bio <- rbind(model_data_final_bio, model_data_bee)
 
 
-coef_LU_final_bee <- NULL
-anova_test_final_bee <- NULL
 
-list_results_LU_bee <- list()
-list_results_final_bee <- list()
+#### Saving biodiversity data in csv files ####
 
-
-for (i in names(list_transitions)){
-  
-  data_for_GLM_bee <- list_transitions[[i]]
-  
-  data_for_GLM_bee <- droplevels(data_for_GLM_bee[data_for_GLM_bee$Region == "PGM",])
-  
-  m1_bee <- glm(bee_rich ~ LU_UF, family = "poisson", data = data_for_GLM_bee)
-  over_test <- check_overdispersion(m1_bee)
-  
-  if (over_test$p >= 0.05){
-    
-    m0_bee <- glm(bee_rich ~ 1, family = "poisson", data = data_for_GLM_bee)
-    
-    anova_test_bee <- anova(m0_bee, m1_bee, test = "Chisq")
-    
-    coef_LU_bee <- as.data.frame(t(m1_bee$coefficients))
-    colnames(coef_LU_bee) <- levels(data_for_GLM_bee$LU_UF)
-    coef_LU_bee$variable <- "bee_rich"
-    coef_LU_bee$family <- "Poisson"
-    coef_LU_bee$p_value <- anova_test_bee$`Pr(>Chi)`[2]
-    coef_LU_bee$R2 <- r.squaredGLMM(m1_bee)[3]
-    coef_LU_bee$AIC <- m1_bee$aic
-    
-    
-    anova_test_final_bee <- rbind(anova_test_final_bee,anova_test_bee)
-    coef_LU_final_bee <- rbind(coef_LU_final_bee, coef_LU_bee)
-    
-  }
-  
-  else {
-    
-    m2_bee <- glm(bee_rich ~ LU_UF, family = "quasipoisson", data = data_for_GLM_bee)
-    m0.2_bee <- glm(bee_rich ~ 1, family = "quasipoisson", data = data_for_GLM_bee)
-    
-    anova_test_bee <- anova(m0.2_bee, m2_bee, test = "Chisq")
-    
-    coef_LU_bee <- as.data.frame(t(m2_bee$coefficients))
-    colnames(coef_LU_bee) <- levels(data_for_GLM_bee$LU_UF)
-    coef_LU_bee$variable <- "bee_rich"
-    coef_LU_bee$family <- "Quasipoisson"
-    coef_LU_bee$p_value <- anova_test_bee$`Pr(>Chi)`[2]
-    coef_LU_bee$R2 <- r.squaredGLMM(m2_bee)[3,1]
-    coef_LU_bee$AIC <- QAIC(object = m1_bee,chat =  deviance(m1_bee) / df.residual(m1_bee))
-    
-    anova_test_final_bee <- rbind(anova_test_final_bee,anova_test_bee)
-    coef_LU_final_bee <- rbind(coef_LU_final_bee, coef_LU_bee)
-  }
-  
-  list_results_LU_bee[[1]] <- anova_test_final_bee
-  list_results_LU_bee[[2]] <- coef_LU_final_bee
-  
-  list_results_final_bee[[i]] <- list_results_LU_bee
-  
-  coef_LU_final_bee <- NULL
-  coef_ranef_final_bee <- NULL
-  anova_test_final_bee <- NULL
-  
-  list_results_LU_bee <- NULL
-  
-}
-
-
-for (i in names(list_results_final_bee)){
-  
-  data_frame_to_save <- list_results_final_bee[[i]][[2]]
-  data_frame_to_save <- bind_rows(data_frame_to_save, list_results_final_bee[[i]][[2]], list_results_final_bee[[i]][[2]])
-  name_file <- paste("bee", "_", i, "_", "forest", ".csv", sep="")
-  write.csv(x = data_frame_to_save, file = paste("Results/", name_file, sep = ""))
-  
-}
-
-#### Joining all results in one dataframe ####
-
-list_results_final_bio2 <- list_results_final_bio
-binded_results_bio <- NULL
-parameters_list <- NULL
-
-for (i in names(list_results_final_bio2)){
-  parameters_list <- as.data.frame(list_results_final_bio2[[i]][2])
-  parameters_list$Transition <- i
-  names(parameters_list)[1:2] <- c("LU1","LU2")
-  
-  binded_results_bio <- bind_rows(binded_results_bio, parameters_list)
-}
-
-
-list_results_final_bee2 <- list_results_final_bee
-binded_results_bee <- NULL
-parameters_list <- NULL
-
-for (i in names(list_results_final_bee2)){
-  parameters_list <- as.data.frame(list_results_final_bee2[[i]][2])
-  parameters_list$Transition <- i
-  names(parameters_list)[1:2] <- c("LU1","LU2")
-  
-  binded_results_bee <- bind_rows(binded_results_bee, parameters_list)
-}
-
-names(binded_results_bee)
-names(binded_results_bio)
-
-names(binded_results_bee)[6] <- "R2m"
-
-binded_results <- bind_rows(binded_results_bio, binded_results_bee)
-
-binded_results[binded_results$LU2<0,"Effect"] <- "decrease"
-binded_results[binded_results$LU2>0,"Effect"] <- "increase"
-binded_results[is.nan(binded_results$p_value),"p_value"] <- 0
-binded_results[binded_results$p_value>0.05,"Effect"] <- "no_effect"
-
-write.csv(x = binded_results, file = "Results/all_results_forest.csv")
+model_data_final_bio$explanatory <- rep(c("LU_UF", "CLAY_ALL", "ELEV_MEAN", "SLOPE_MEAN"), 7)
+efsize_final_bio$transition <- rep(c("UF_LF", "UF_LBF", "UF_PA", "UF_MA", "LF_LBF",
+                                     "LF_PA", "LF_MA" , "LBF_PA", "LBF_MA", "PA_MA", 
+                                     "PA_SFyoung", "MA_SFyoung", "SFold_PA", "SFold_MA",
+                                     "SFyoung_SFold"), 7)
+write.csv(x = model_data_final_bio, file = "Results/model_data_bio_forest.csv", row.names = F)
+write.csv(x = efsize_final_bio, file = "Results/efsize_bio_forest.csv", row.names = F)
