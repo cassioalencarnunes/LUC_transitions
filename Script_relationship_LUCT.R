@@ -9,7 +9,7 @@ library(DHARMa)
 
 # Loading data
 
-data_ef <- read.csv("efsize_median.csv", h=T)
+data_ef <- read.csv("Results/efsize_median.csv", h=T)
 data_transitions <- read.table("Data/Transition_rates.txt", h=T)
 
 data_transitions[!data_transitions$transition %in% data_ef$transition, "transition"]
@@ -27,13 +27,13 @@ biodiversity <- droplevels(data_all[data_all$Component=="biodiversity",])
 carbon <- droplevels(data_all[data_all$Component=="carbon",])
 soil <- droplevels(data_all[data_all$Component=="soil",])
 
-#### Testing the regression models ####
+#### Testing correlation ####
 
 # Checking normality of effect sizes and log of transition's rates
 
 shapiro.test(log(biodiversity$km2))
 shapiro.test(biodiversity$median_es) # OK
-shapiro.test(carbon$median_es) # No, spearman instead of Pearson
+shapiro.test(carbon$median_es) # No, Spearman instead of Pearson
 shapiro.test(soil$median_es) # OK
 
 cor.test(y=biodiversity$median_es, x=log(biodiversity$km2))

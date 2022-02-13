@@ -1,4 +1,4 @@
-Transition	km2
+transition	km2
 LBF_MA	0.908152925
 LBF_PA	61.09184708
 LF_LBF	188

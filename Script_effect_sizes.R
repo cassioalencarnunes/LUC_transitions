@@ -9,7 +9,7 @@ library(tidyverse)
 
 # Loading data
 
-efsize_data <- read.csv("efsize_data.csv", h=T)
+efsize_data <- read.csv("Results/efsize_data.csv", h=T)
 
 biodiversity_variables <- c("ant_rich", "bee_rich", "bird_rich", "db_rich", "liana_rich", "sap_rich", "tree_rich")
 carbon_variables <- c("Aboveground_pool", "Litter_pool", "Dead_pool", "Soil_pool_new")
@@ -46,7 +46,7 @@ efsize_data2 <- efsize_data %>%
   group_by(Component) %>% 
   left_join(efsize_data_ordered, by = c("Component", "transition"))
 
-#write.csv(x = efsize_data_ordered, file = "efsize_median.csv", row.names = F)
+write.csv(x = efsize_data_ordered, file = "Results/efsize_median.csv", row.names = F)
 
 
 # Plot
@@ -70,7 +70,7 @@ ggplot(efsize_data2)+
 
 ## Heat map
 
-efsize_data <- read.csv("efsize_data.csv", h=T)
+efsize_data <- read.csv("Results/efsize_data.csv", h=T)
 
 efsize_data <- efsize_data[order(match(efsize_data$variable,
                                        c("tree_rich", "sap_rich", "liana_rich", "bird_rich", "ant_rich", "db_rich",
@@ -86,16 +86,6 @@ efsize_data <- efsize_data[order(match(efsize_data$transition,
 matrix <- as.data.frame(pivot_wider(efsize_data, id_cols = transition, names_from = variable, values_from = Estimate))
 row.names(matrix) <- matrix$transition
 
-levelplot(t(as.matrix(matrix[,2:19])), col.regions = colorRampPalette(c("#FCFDBFFF" ,"#FEBA80FF", "#F8765CFF", "#D3436EFF", "#982D80FF", "#5F187FFF", "#180F3EFF"))(200),
-          colorkey = list(TRUE, height = 1), at = seq(-1.8,2.7,0.05), scales = list(y = (list(cex=1, font=2)), tck = c(1,0), x=list(cex=1, rot=45, font=2)),
-          aspect = 15/19, xlab = NULL, ylab = "Transitions")
-
 levelplot(t(as.matrix(matrix[,2:19]))*-1, col.regions = colorRampPalette(c("#01665e", "#35978f", "#5ab4ac", "#f5f5f5", "#dfc27d", "#d8b365", "#8c510a"))(200),
           colorkey = list(TRUE, height = 1), at = seq(-2.7,2.7,0.05), scales = list(y = (list(cex=1, font=2)), tck = c(1,0), x=list(cex=1, rot=45, font=2)),
           aspect = 15/19, xlab = NULL, ylab = "Transitions")
-
-#d8b365
-#f5f5f5
-#5ab4ac
-
-range(matrix[,2:19])
