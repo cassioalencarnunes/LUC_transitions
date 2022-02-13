@@ -1,4 +1,4 @@
-#### Script to test the link between land-use and land-cover transition rates to their ecological impacts ####
+#### Script to test the relationship between land-use and land-cover transition rates to their ecological impacts ####
 
 # Loading packages 
 
