@@ -1,7 +1,7 @@
 #### Script to run  the analyses of land use and land cover transition effects on ecosystem variables ####
       ## The script runs LMMs for each response variable ##
 # Each model has four explanatory variable, being Land use the variable of interest and
-# Clay, elevation and slope co-variables. It also has catchment and region as random factors
+# Clay, elevation and slope as co-variates. It also has catchment and region as random factors
 
 
 # Loading packages
