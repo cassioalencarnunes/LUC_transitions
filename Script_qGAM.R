@@ -31,14 +31,14 @@ data_all_joined_scaled$LU_UF <- as.factor(data_all_joined_scaled$LU_UF)
 # Creating an object with all transitions, i.e. contrasts to be run
 
 transitions <- c("LU_UFUF - LU_UFLF = 0",
-                 "LU_UFUF - (Intercept) = 0",
+                 "LU_UFUF = 0",
                  "LU_UFUF - LU_UFPA = 0",
                  "LU_UFUF - LU_UFMA = 0",
-                 "LU_UFLF - (Intercept) = 0",
+                 "LU_UFLF = 0",
                  "LU_UFLF - LU_UFPA = 0",
                  "LU_UFLF - LU_UFMA = 0",
-                 "(Intercept) - LU_UFPA = 0",
-                 "(Intercept) - LU_UFMA = 0",
+                 "-LU_UFPA = 0",
+                 "-LU_UFMA = 0",
                  "LU_UFPA - LU_UFMA = 0",
                  "LU_UFPA - LU_UFSFyoung = 0",
                  "LU_UFMA - LU_UFSFyoung = 0",
@@ -123,7 +123,7 @@ for (i in CS_variables){
 
 }
 
-# Saving the data in csv files
+# Organizing the data frames
 
 anova_test_pvalue_final$explanatory <- rep(c("LU_UF", "CLAY_ALL", "ELEV_MEAN", "SLOPE_MEAN"), 11)
 anova_test_random_final$explanatory <- rep(c("Region", "Catchment"), 11)
@@ -217,7 +217,7 @@ anova_test_pvalue_final_bio <- rbind(anova_test_pvalue_final_bio, anova_test_pva
 anova_test_random_final_bio <- rbind(anova_test_random_final_bio, anova_test_random)
 
 
-#### Saving biodiversity data in csv files ####
+#### Organizing biodiversity data in data frames ####
 
 anova_test_pvalue_final_bio$explanatory <- rep(c("LU_UF", "CLAY_ALL", "ELEV_MEAN", "SLOPE_MEAN"), 7)
 anova_test_random_final_bio$explanatory <- c(rep(c("Region", "Catchment"), 6), "Catchment")
@@ -239,6 +239,7 @@ write.csv(x = efsize_data, file = "results/qGAM_efsize_data.csv", row.names = F)
 
 ########################################################################################
 
+rm(list = ls())
 
 #### Validation analysis - Correlation between effect sizes ####
 
@@ -247,6 +248,7 @@ ef_size_qgam <- read.csv("Results/qGAM_efsize_data.csv")
 
 
 ef_size_qgam$Estimate_lmm <- ef_size_lmm$Estimate
+ef_size_qgam$p_value_lmm <- ef_size_lmm$p_value
 
 ef_size_qgam$Estimate_lmm <- ef_size_qgam$Estimate_lmm*-1
 ef_size_qgam$Estimate <- ef_size_qgam$Estimate*-1
@@ -270,11 +272,17 @@ z_final
 
 # Graph
 
+ef_size_qgam$change <- NA
+ef_size_qgam[ef_size_qgam$p_value >= 0.05 & ef_size_qgam$p_value_lmm < 0.05, "change"] <- "Became non-significant"
+ef_size_qgam[ef_size_qgam$p_value < 0.05 & ef_size_qgam$p_value_lmm >= 0.05, "change"] <- "Became significant"
+ef_size_qgam[is.na(ef_size_qgam$change), "change"] <- "No change"
+
 library(ggplot2)
 
 ggplot(ef_size_qgam, aes(y=Estimate, x=Estimate_lmm))+
-  geom_point(size = 3)+
+  geom_point(aes(color = change), size = 3)+
+  scale_color_manual(values=c('#56B4E9', '#E69F00','#999999'))+
   geom_smooth(method = "lm", se = F)+
-  labs(x = "LMM effect size", y = "qGAM effect size")+
+  labs(x = "LMM effect size", y = "qGAM effect size", colour = "p-value")+
   facet_wrap(variable~., scale = "free")+
   theme_classic()
