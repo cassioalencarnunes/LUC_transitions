@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/411377128.svg)](https://zenodo.org/badge/latestdoi/411377128)
 # Linking land-use and land-cover transitions to their ecological impact in the Amazon
 
 Cássio Alencar Nunes, Erika Berenguer, Filipe França, Joice Ferreira, Alexander C. Lees, Julio Louzada, Emma J. Sayer, Ricardo Solar, Charlotte C. Smith, Luiz E. O. C. Aragão, Danielle de Lima Braga, Plinio Camargo, Carlos Eduardo Pellegrino Cerri, Raimundo Cosme, Mariana Durigan, Nárgila Moura, Victor Hugo Fonseca Oliveira, Carla Ribas, Fernando Vaz-de-Mello, Ima Vieira, Ronald Zanetti, Jos Barlow
